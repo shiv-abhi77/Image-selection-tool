@@ -10,7 +10,7 @@ const ImageSelector = () => {
 
   useEffect(() => {
     axios
-      .get("/api/images/athletes/unselected")
+      .get(`${url}/api/images/athletes/unselected`)
       .then((res) => setAthletes(res.data));
   }, []);
 
@@ -32,7 +32,7 @@ const ImageSelector = () => {
   const saveSelectedImages = async () => {
     if (!selectedAthlete || Object.keys(selectedImages).length === 0) return;
 
-    await axios.post("/api/images/finalize", {
+    await axios.post(`${url}/api/images/finalize`, {
       athleteId: selectedAthlete._id || selectedAthlete.athlete_id,
       selected_images: Object.values(selectedImages),
       type: imageType,
