@@ -6,16 +6,29 @@ const ImageSelector = () => {
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [selectedImages, setSelectedImages] = useState({});
   const [imageType, setImageType] = useState("profile");
+  const [currentPage, setCurrentPage] = useState(1);
+  const athletesPerPage = 5;
   const url = process.env.REACT_APP_SERVER_URL || "http://localhost:5000";
+  const [totalAthletes, setTotalAthletes] = useState(0);
 
   useEffect(() => {
+    const params = new URLSearchParams({
+      page: currentPage,
+      limit: athletesPerPage,
+    });
+    // Set the URL parameters in the browser
+    window.history.replaceState(null, "", `?${params.toString()}`);
     axios
-      .get(`${url}/api/images/athletes/unselected`)
-      .then((res) => setAthletes(res.data));
-  }, []);
+      .get(`${url}/api/images/athletes/unselected?${params.toString()}`)
+      .then((res) => {
+        setAthletes(res.data.athletes);
+        setTotalAthletes(res.data.total);
+      });
+  }, [currentPage]);
 
-  const handleDropdownChange = (e) => {
-    const athlete = athletes.find((a) => a.athlete_id === e.target.value);
+  const totalPages = Math.ceil(totalAthletes / athletesPerPage);
+
+  const handleAthleteSelect = (athlete) => {
     setSelectedAthlete(athlete);
   };
 
@@ -55,26 +68,170 @@ const ImageSelector = () => {
   return (
     <div className="p-4">
       <h1>Select Athlete</h1>
-
-      <select
-        onChange={handleDropdownChange}
-        value={selectedAthlete?.athlete_id || ""}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
+          marginBottom: "20px",
+        }}
       >
-        <option value="" disabled>
-          Select athlete
-        </option>
         {athletes.map((a) => (
-          <option key={a.athlete_id} value={a.athlete_id}>
-            {a.athlete_name}
-          </option>
+          <div
+            key={a._id || a.athlete_id}
+            style={{
+              border: "1px solid #ccc",
+              borderRadius: 6,
+              padding: 10,
+              background:
+                selectedAthlete?._id === a._id ? "#d1e7dd" : "#f8f9fa",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span
+                style={{
+                  fontWeight:
+                    selectedAthlete?._id === a._id ? "bold" : "normal",
+                }}
+              >
+                {a.athlete_name}
+                {a.discipline && (
+                  <span
+                    style={{
+                      color: "#888",
+                      fontWeight: "normal",
+                      marginLeft: 8,
+                    }}
+                  >
+                    ({a.discipline})
+                  </span>
+                )}
+              </span>
+              <button
+                onClick={() => handleAthleteSelect(a)}
+                style={{ marginLeft: 10 }}
+              >
+                Select
+              </button>
+            </div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>
+              Profile:{" "}
+              {a.profileFinalized
+                ? `Finalized at ${
+                    a.profileFinalizedAt
+                      ? new Date(a.profileFinalizedAt).toLocaleString()
+                      : ""
+                  }`
+                : "Not finalized"}
+              <br />
+              Gallery:{" "}
+              {a.galleryFinalized
+                ? `Finalized at ${
+                    a.galleryFinalizedAt
+                      ? new Date(a.galleryFinalizedAt).toLocaleString()
+                      : ""
+                  }`
+                : "Not finalized"}
+            </div>
+            {a.profileFinalized && a.profileImages.length > 0 && (
+              <div style={{ marginTop: 4 }}>
+                <b>Profile Images:</b>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {a.profileImages.map((img) => (
+                    <img
+                      key={img.image_id}
+                      src={img.url}
+                      alt={img.alt_text}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        objectFit: "cover",
+                        borderRadius: 4,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {a.galleryFinalized && a.galleryImages.length > 0 && (
+              <div style={{ marginTop: 4 }}>
+                <b>Gallery Images:</b>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {a.galleryImages.map((img) => (
+                    <img
+                      key={img.image_id}
+                      src={img.url}
+                      alt={img.alt_text}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        objectFit: "cover",
+                        borderRadius: 4,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         ))}
-      </select>
-
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: "10px",
+            marginTop: "10px",
+            alignItems: "center",
+          }}
+        >
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+          >
+            Previous
+          </button>
+          {/* Page numbers */}
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+            <button
+              key={pageNum}
+              onClick={() => setCurrentPage(pageNum)}
+              style={{
+                fontWeight: currentPage === pageNum ? "bold" : "normal",
+                background: currentPage === pageNum ? "#d1e7dd" : undefined,
+                border:
+                  currentPage === pageNum
+                    ? "2px solid #0d6efd"
+                    : "1px solid #ccc",
+                borderRadius: 4,
+                minWidth: 32,
+                minHeight: 32,
+                margin: "0 2px",
+              }}
+              disabled={currentPage === pageNum}
+            >
+              {pageNum}
+            </button>
+          ))}
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+          >
+            Next
+          </button>
+        </div>
+      </div>
       {selectedAthlete && (
         <div>
           <h2>{selectedAthlete.athlete_name}</h2>
+
           <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            {selectedAthlete.image_urls.map((image) => {
+            {(selectedAthlete.image_urls || []).map((image) => {
               const isSelected = selectedImages[image.image_id];
               return (
                 <div
@@ -140,7 +297,8 @@ const ImageSelector = () => {
             <option value="gallery">Gallery</option>
           </select>
           <button onClick={saveSelectedImages} style={{ marginTop: "20px" }}>
-            Finalize Image{Object.keys(selectedImages).length > 1 ? "s" : ""}
+            Finalize Image
+            {Object.keys(selectedImages).length > 1 ? "s" : ""}
           </button>
         </div>
       )}

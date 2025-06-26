@@ -1,11 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const {
-  getAllUnselectedAthletes,
+  getAllAthletes,
   finalizeImage,
 } = require("../controllers/imageController");
 
-router.get("/athletes/unselected", getAllUnselectedAthletes);
+router.get("/athletes/unselected", getAllAthletes);
 router.post("/finalize", finalizeImage);
 
 module.exports = router;
