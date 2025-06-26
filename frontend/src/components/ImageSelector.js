@@ -53,16 +53,21 @@ const ImageSelector = () => {
 
     alert(`${imageType} images finalized!`);
 
-    setAthletes((prev) =>
-      prev.filter(
-        (a) =>
-          (a._id || a.athlete_id) !==
-          (selectedAthlete._id || selectedAthlete.athlete_id)
-      )
-    );
+    // Instead of filtering out the athlete, just refresh the current page
     setSelectedAthlete(null);
     setSelectedImages({});
     setImageType("profile");
+    // Refetch the current page
+    const params = new URLSearchParams({
+      page: currentPage,
+      limit: athletesPerPage,
+    });
+    axios
+      .get(`${url}/api/images/athletes/unselected?${params.toString()}`)
+      .then((res) => {
+        setAthletes(res.data.athletes);
+        setTotalAthletes(res.data.total);
+      });
   };
 
   return (
