@@ -8,6 +8,8 @@ const galleryImageSchema = new mongoose.Schema({
       url: String,
       original_url: String,
       source: String,
+      text: String,
+      _id: false, // Prevent Mongoose from adding _id to each image
     },
   ],
   selected_at: { type: Date, default: Date.now },

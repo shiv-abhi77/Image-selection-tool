@@ -182,6 +182,7 @@ const finalizeGalleryImage = async (req, res) => {
           url: uploadedUrl, // Cloudinary URL
           original_url: img.url, // Original image URL
           source: img.source,
+          text: img.text
         };
       })
     );

@@ -95,6 +95,7 @@ const ImageSelector = () => {
       selected_images: Object.values(selectedImages).map((img) => ({
         url: img.url,
         source: img.source,
+        text: img.text
       })),
     });
     alert(`${imageType} image${selectedCount > 1 ? "s" : ""} finalized!`);
@@ -451,7 +452,7 @@ const ImageSelector = () => {
                 if (!manualUrl) return;
                 await axios.post(`${url}${getFinalizeEndpoint(imageType)}`, {
                   athleteId: selectedAthlete.athlete_id,
-                  selected_images: [{ url: manualUrl, source: null }],
+                  selected_images: [{ url: manualUrl, source: null, text: null }],
                 });
                 alert("Manual image finalized!");
                 setSelectedAthlete(null);
