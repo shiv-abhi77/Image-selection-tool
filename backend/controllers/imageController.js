@@ -174,7 +174,6 @@ const finalizeGalleryImage = async (req, res) => {
       return res.status(400).json({ message: "Invalid request" });
     }
 
-    console.log(selected_images);
     // Upload all images to Cloudinary and map to objects with both URLs
     const uploadedImages = await Promise.all(
       selected_images.map(async (img) => {
@@ -187,14 +186,24 @@ const finalizeGalleryImage = async (req, res) => {
       })
     );
 
-    console.log(uploadedImages);
+    // Add to existing gallery images, don't replace
+    const galleryDoc = await GalleryImage.findOne({ athlete_id: new mongoose.Types.ObjectId(athleteId) });
+    let newImages = uploadedImages;
+    if (galleryDoc && Array.isArray(galleryDoc.selected_images)) {
+      // Avoid duplicates by original_url
+      const existingOriginalUrls = new Set(galleryDoc.selected_images.map(img => img.original_url));
+      newImages = [
+        ...galleryDoc.selected_images,
+        ...uploadedImages.filter(img => !existingOriginalUrls.has(img.original_url))
+      ];
+    }
 
     // Save/update in DB
     await GalleryImage.findOneAndUpdate(
       { athlete_id: new mongoose.Types.ObjectId(athleteId) },
       {
         athlete_id: new mongoose.Types.ObjectId(athleteId),
-        selected_images: uploadedImages,
+        selected_images: newImages,
         selected_at: new Date(),
       },
       { upsert: true, new: true }
@@ -205,10 +214,6 @@ const finalizeGalleryImage = async (req, res) => {
     console.error(err);
     res.status(500).json({ message: "Server Error" });
   }
-};
-
-module.exports = {
-  finalizeGalleryImage,
 };
 
 const finalizeHeroImage = async (req, res) => {
