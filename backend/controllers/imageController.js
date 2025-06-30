@@ -51,7 +51,7 @@ const getAllAthletes = async (req, res) => {
             // Project required fields + finalized flags
             {
               $project: {
-                athlete_id:1,
+                athlete_id: 1,
                 name: 1,
                 athlete_name: 1,
                 image_urls: 1,
@@ -150,7 +150,7 @@ async function uploadToCloudinary(imageUrl, folder = "athlete_images") {
   const buffer = Buffer.from(response.data, "binary");
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
-      { folder, use_filename: true, unique_filename: false, overwrite: true },
+      { folder, use_filename: true, unique_filename: true, overwrite: true },
       (error, result) => {
         if (error) return reject(error);
         resolve(result.secure_url);
