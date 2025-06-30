@@ -1,59 +1,16 @@
 const mongoose = require("mongoose");
-const Athlete = require("../models/Athlete");
-const ProfileImage = require("../models/ProfileImage");
+const AthleteScraped = require("../models/AthleteScraped");
 const GalleryImage = require("../models/GalleryImage");
+const cloudinary = require("cloudinary").v2;
+const axiosHttp = require("axios");
+const streamifier = require("streamifier");
+const Athlete = require("../models/Athlete");
 
-// const getAllUnselectedAthletes = async (req, res) => {
-//   try {
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = parseInt(req.query.limit) || 5;
-//     const skip = (page - 1) * limit;
-//     // Fetch finalized athlete IDs from both collections
-//     const profileSelected = await ProfileImage.find({}, "athlete_id");
-//     const gallerySelected = await GalleryImage.find({}, "athlete_id");
-
-//     const profileIds = new Set(
-//       profileSelected.map((doc) => doc.athlete_id.toString())
-//     );
-//     const galleryIds = new Set(
-//       gallerySelected.map((doc) => doc.athlete_id.toString())
-//     );
-
-//     // Create a Set of athletes finalized in BOTH
-//     const finalizedInBoth = new Set(
-//       [...profileIds].filter((id) => galleryIds.has(id))
-//     );
-
-//     // Get ALL athlete IDs
-//     const allAthletes = await Athlete.find({}, "_id");
-
-//     // Select those not in finalizedInBoth
-//     const unselectedAthletes = allAthletes.filter((athlete) => {
-//       const id = athlete._id.toString();
-//       return !finalizedInBoth.has(id);
-//     });
-
-//     const total = unselectedAthletes.length;
-//     const paginatedIds = unselectedAthletes
-//       .slice(skip, skip + limit)
-//       .map((a) => a._id);
-
-//     // Now get their full data
-//     const fullUnselectedAthletes = await Athlete.find({
-//       _id: { $in: paginatedIds },
-//     });
-
-//     res.json({
-//       athletes: fullUnselectedAthletes,
-//       total,
-//       page,
-//       limit,
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ message: "Server Error" });
-//   }
-// };
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const getAllAthletes = async (req, res) => {
   try {
@@ -61,101 +18,256 @@ const getAllAthletes = async (req, res) => {
     const limit = parseInt(req.query.limit) || 5;
     const skip = (page - 1) * limit;
 
-    // Get paginated athletes
-    const result = await Athlete.aggregate([
+    const result = await AthleteScraped.aggregate([
       {
         $facet: {
-          data: [{ $skip: skip }, { $limit: limit }],
+          data: [
+            { $skip: skip },
+            { $limit: limit },
+
+            // Join Athlete data
+            {
+              $lookup: {
+                from: "athletes",
+                localField: "athlete_id",
+                foreignField: "_id",
+                as: "athlete",
+              },
+            },
+            { $unwind: { path: "$athlete", preserveNullAndEmptyArrays: true } },
+
+            // Join Gallery data
+            {
+              $lookup: {
+                from: "gallery_images",
+                localField: "athlete_id",
+                foreignField: "athlete_id",
+                as: "gallery",
+              },
+            },
+            // Since athlete_id is unique in gallery, we can safely unwind
+            { $unwind: { path: "$gallery", preserveNullAndEmptyArrays: true } },
+
+            // Project required fields + finalized flags
+            {
+              $project: {
+                athlete_id:1,
+                name: 1,
+                athlete_name: 1,
+                image_urls: 1,
+                total_images_found: 1,
+                discipline: 1,
+
+                // Hero image
+                heroImageFinalized: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $ne: ["$athlete.hero_image", null] },
+                        { $ne: ["$athlete.hero_image", ""] },
+                      ],
+                    },
+                    true,
+                    false,
+                  ],
+                },
+                heroImageUrl: "$athlete.hero_image",
+                heroFinalizedAt: "$athlete.updated_at",
+
+                // Cover image
+                coverImageFinalized: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $ne: ["$athlete.image_url", null] },
+                        { $ne: ["$athlete.image_url", ""] },
+                      ],
+                    },
+                    true,
+                    false,
+                  ],
+                },
+                coverImageUrl: "$athlete.image_url",
+                coverFinalizedAt: "$athlete.updated_at",
+
+                // Gallery images
+                galleryFinalized: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $ne: ["$gallery", null] },
+                        {
+                          $gt: [
+                            {
+                              $size: {
+                                $ifNull: ["$gallery.selected_images", []],
+                              },
+                            },
+                            0,
+                          ],
+                        },
+                      ],
+                    },
+                    true,
+                    false,
+                  ],
+                },
+                galleryFinalizedAt: "$gallery.selected_at",
+                galleryImages: {
+                  $ifNull: ["$gallery.selected_images", []],
+                },
+              },
+            },
+          ],
           totalCount: [{ $count: "count" }],
         },
       },
     ]);
+
     const athletes = result[0].data;
     const total = result[0].totalCount[0]?.count || 0;
 
-    console.log(athletes)
-
-    // Fetch finalized info for all paginated athletes
-    const athleteIds = athletes.map((a) => a._id);
-    const profileImages = await ProfileImage.find({
-      athlete_id: { $in: athleteIds },
-    });
-    const galleryImages = await GalleryImage.find({
-      athlete_id: { $in: athleteIds },
-    });
-
-    // Map for quick lookup
-    const profileMap = new Map(
-      profileImages.map((img) => [img.athlete_id.toString(), img])
-    );
-    const galleryMap = new Map(
-      galleryImages.map((img) => [img.athlete_id.toString(), img])
-    );
-
-    // Attach finalized info to each athlete
-    const enrichedAthletes = athletes.map((a) => {
-      const id = a._id.toString();
-      const profile = profileMap.get(id);
-      const gallery = galleryMap.get(id);
-      return {
-        ...a,
-        profileFinalized: !!profile,
-        profileFinalizedAt: profile?.selected_at || null,
-        profileImages: profile?.selected_images || [],
-        galleryFinalized: !!gallery,
-        galleryFinalizedAt: gallery?.selected_at || null,
-        galleryImages: gallery?.selected_images || [],
-      };
-    });
-    // console.log(enrichedAthletes)
-
     res.json({
-      athletes: enrichedAthletes,
+      athletes,
       total,
       page,
       limit,
+      totalPages: Math.ceil(total / limit),
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server Error" });
+    console.error("Error in getAllAthletes:", err);
+    res.status(500).json({
+      message: "Server Error",
+      error: process.env.NODE_ENV === "development" ? err.message : undefined,
+    });
   }
 };
 
-const finalizeImage = async (req, res) => {
-  try {
-    const { athleteId, selected_images, type } = req.body;
+async function uploadToCloudinary(imageUrl, folder = "athlete_images") {
+  const response = await axiosHttp.get(imageUrl, {
+    responseType: "arraybuffer",
+  });
+  const buffer = Buffer.from(response.data, "binary");
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { folder, use_filename: true, unique_filename: false, overwrite: true },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result.secure_url);
+      }
+    );
+    streamifier.createReadStream(buffer).pipe(uploadStream);
+  });
+}
 
+const finalizeGalleryImage = async (req, res) => {
+  try {
+    const { athleteId, selected_images } = req.body;
+
+    // Validation
     if (
       !athleteId ||
       !Array.isArray(selected_images) ||
       selected_images.length === 0 ||
-      !["profile", "gallery"].includes(type)
+      !selected_images.every((img) => img.url && typeof img.url === "string")
     ) {
       return res.status(400).json({ message: "Invalid request" });
     }
 
-    if (type === "profile") {
-      await ProfileImage.findOneAndUpdate(
-        { athlete_id: new mongoose.Types.ObjectId(athleteId) },
-        {
-          athlete_id: new mongoose.Types.ObjectId(athleteId),
-          selected_images,
-        },
-        { upsert: true, new: true }
-      );
-    } else {
-      // Add new gallery record for this athlete
-      await GalleryImage.create({
-        athlete_id: new mongoose.Types.ObjectId(athleteId),
-        selected_images,
-      });
-    }
+    console.log(selected_images);
+    // Upload all images to Cloudinary and map to objects with both URLs
+    const uploadedImages = await Promise.all(
+      selected_images.map(async (img) => {
+        const uploadedUrl = await uploadToCloudinary(img.url, "gallery");
+        return {
+          url: uploadedUrl, // Cloudinary URL
+          original_url: img.url, // Original image URL
+          source: img.source,
+        };
+      })
+    );
 
-    res.status(200).json({ message: `${type} image(s) finalized` });
+    console.log(uploadedImages);
+
+    // Save/update in DB
+    await GalleryImage.findOneAndUpdate(
+      { athlete_id: new mongoose.Types.ObjectId(athleteId) },
+      {
+        athlete_id: new mongoose.Types.ObjectId(athleteId),
+        selected_images: uploadedImages,
+        selected_at: new Date(),
+      },
+      { upsert: true, new: true }
+    );
+
+    res.status(200).json({ message: "Gallery image(s) finalized" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server Error" });
   }
 };
 
-module.exports = { getAllAthletes, finalizeImage };
+module.exports = {
+  finalizeGalleryImage,
+};
+
+const finalizeHeroImage = async (req, res) => {
+  try {
+    const { athleteId, selected_images } = req.body;
+    if (
+      !athleteId ||
+      !Array.isArray(selected_images) ||
+      selected_images.length !== 1 ||
+      !selected_images[0].url ||
+      typeof selected_images[0].url !== "string"
+    ) {
+      return res
+        .status(400)
+        .json({ message: "Must select exactly one valid image for hero" });
+    }
+    const url = await uploadToCloudinary(selected_images[0].url, "hero");
+    await Athlete.findByIdAndUpdate(
+      athleteId,
+      { hero_image: url },
+      { new: true }
+    );
+    res.status(200).json({ message: `hero image finalized` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+const finalizeCoverImage = async (req, res) => {
+  try {
+    const { athleteId, selected_images } = req.body;
+    if (
+      !athleteId ||
+      !Array.isArray(selected_images) ||
+      selected_images.length !== 1 ||
+      !selected_images[0].url ||
+      typeof selected_images[0].url !== "string"
+    ) {
+      return res
+        .status(400)
+        .json({ message: "Must select exactly one valid image for cover" });
+    }
+    const url = await uploadToCloudinary(selected_images[0].url, "cover");
+    await Athlete.findByIdAndUpdate(
+      athleteId,
+      { image_url: url },
+      { new: true }
+    );
+    res.status(200).json({ message: `cover image finalized` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+module.exports = {
+  getAllAthletes,
+  finalizeGalleryImage,
+  finalizeHeroImage,
+  finalizeCoverImage,
+};

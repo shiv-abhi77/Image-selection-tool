@@ -5,11 +5,12 @@ const ImageSelector = () => {
   const [athletes, setAthletes] = useState([]);
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [selectedImages, setSelectedImages] = useState({});
-  const [imageType, setImageType] = useState("profile");
+  const [imageType, setImageType] = useState("gallery");
   const [currentPage, setCurrentPage] = useState(1);
   const athletesPerPage = 5;
   const url = process.env.REACT_APP_SERVER_URL || "http://localhost:5000";
   const [totalAthletes, setTotalAthletes] = useState(0);
+  const [manualUrl, setManualUrl] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams({
@@ -30,6 +31,7 @@ const ImageSelector = () => {
 
   const handleAthleteSelect = (athlete) => {
     setSelectedAthlete(athlete);
+    setSelectedImages({});
   };
 
   const toggleImageSelect = (image) => {
@@ -42,21 +44,63 @@ const ImageSelector = () => {
     });
   };
 
+  const imageTypeOptions = [
+    { label: "Gallery", value: "gallery" },
+    { label: "Hero", value: "hero" },
+    { label: "Cover", value: "cover" },
+  ];
+
+  // Map image type to backend endpoint
+  const getFinalizeEndpoint = (type) => {
+    if (type === "gallery") return "/api/images/finalize/gallery";
+    if (type === "hero") return "/api/images/finalize/hero";
+    if (type === "cover") return "/api/images/finalize/cover";
+    // fallback
+    return "/api/images/finalize/cover";
+  };
+
+  const validateSelection = () => {
+    if (!selectedAthlete) return false;
+    const selectedCount = Object.keys(selectedImages).length;
+    if (imageType === "hero") {
+      return selectedCount === 1;
+    }
+    if (imageType === "cover") {
+      return selectedCount === 1;
+    }
+    if (imageType === "gallery") {
+      return selectedCount > 0;
+    }
+    return false;
+  };
+
   const saveSelectedImages = async () => {
-    if (!selectedAthlete || Object.keys(selectedImages).length === 0) return;
-
-    await axios.post(`${url}/api/images/finalize`, {
-      athleteId: selectedAthlete._id || selectedAthlete.athlete_id,
-      selected_images: Object.values(selectedImages),
-      type: imageType,
+    if (!selectedAthlete) return;
+    const selectedCount = Object.keys(selectedImages).length;
+    // Validation for each type
+    if (imageType === "hero" && selectedCount !== 1) {
+      alert("You must select exactly one image for hero.");
+      return;
+    }
+    if (imageType === "cover" && selectedCount !== 1) {
+      alert("You must select exactly one image for cover.");
+      return;
+    }
+    if (imageType === "gallery" && selectedCount === 0) {
+      alert("You must select at least one image for gallery.");
+      return;
+    }
+    await axios.post(`${url}${getFinalizeEndpoint(imageType)}`, {
+      athleteId: selectedAthlete.athlete_id,
+      selected_images: Object.values(selectedImages).map((img) => ({
+        url: img.url,
+        source: img.source,
+      })),
     });
-
-    alert(`${imageType} images finalized!`);
-
-    // Instead of filtering out the athlete, just refresh the current page
+    alert(`${imageType} image${selectedCount > 1 ? "s" : ""} finalized!`);
     setSelectedAthlete(null);
     setSelectedImages({});
-    setImageType("profile");
+    setImageType("gallery");
     // Refetch the current page
     const params = new URLSearchParams({
       page: currentPage,
@@ -68,6 +112,36 @@ const ImageSelector = () => {
         setAthletes(res.data.athletes);
         setTotalAthletes(res.data.total);
       });
+  };
+
+  // Normalize image_urls for selectedAthlete
+  const getNormalizedImageUrls = (athlete) => {
+    if (!athlete) return [];
+    // If already in the new format (array of objects with url/text/source)
+    if (
+      Array.isArray(athlete.image_urls) &&
+      typeof athlete.image_urls[0] === "object" &&
+      athlete.image_urls[0] !== null &&
+      athlete.image_urls[0].url
+    ) {
+      return athlete.image_urls.map((img, idx) => ({
+        ...img,
+        image_id: img.image_id || `${img.url}_${idx}`,
+      }));
+    }
+    // If array of strings (legacy)
+    if (
+      Array.isArray(athlete.image_urls) &&
+      typeof athlete.image_urls[0] === "string"
+    ) {
+      return athlete.image_urls.map((url, idx) => ({
+        url,
+        text: "",
+        source: "",
+        image_id: url + "_" + idx,
+      }));
+    }
+    return [];
   };
 
   return (
@@ -126,15 +200,56 @@ const ImageSelector = () => {
               </button>
             </div>
             <div style={{ fontSize: 13, marginTop: 4 }}>
-              Profile:{" "}
-              {a.profileFinalized
-                ? `Finalized at ${
-                    a.profileFinalizedAt
-                      ? new Date(a.profileFinalizedAt).toLocaleString()
-                      : ""
-                  }`
-                : "Not finalized"}
-              <br />
+              {a.heroImageFinalized && a.heroImageUrl && (
+                <div style={{ marginBottom: 4 }}>
+                  <b>Hero Image:</b>
+                  <img
+                    src={a.heroImageUrl}
+                    alt="Hero"
+                    style={{
+                      width: 60,
+                      height: 60,
+                      objectFit: "cover",
+                      borderRadius: 4,
+                      marginLeft: 8,
+                      verticalAlign: "middle",
+                    }}
+                  />
+                  {a.heroFinalizedAt && (
+                    <span
+                      style={{ fontSize: 11, color: "#888", marginLeft: 8 }}
+                    >
+                      Finalized at{" "}
+                      {new Date(a.heroFinalizedAt).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              )}
+              {a.coverImageFinalized && a.coverImageUrl && (
+                <div style={{ marginBottom: 4 }}>
+                  <b>Cover Image:</b>
+                  <img
+                    src={a.coverImageUrl}
+                    alt="Cover"
+                    style={{
+                      width: 60,
+                      height: 60,
+                      objectFit: "cover",
+                      borderRadius: 4,
+                      marginLeft: 8,
+                      verticalAlign: "middle",
+                    }}
+                  />
+                  {a.coverFinalizedAt && (
+                    <span
+                      style={{ fontSize: 11, color: "#888", marginLeft: 8 }}
+                    >
+                      Finalized at{" "}
+                      {new Date(a.coverFinalizedAt).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              )}
               Gallery:{" "}
               {a.galleryFinalized
                 ? `Finalized at ${
@@ -144,26 +259,7 @@ const ImageSelector = () => {
                   }`
                 : "Not finalized"}
             </div>
-            {a.profileFinalized && a.profileImages.length > 0 && (
-              <div style={{ marginTop: 4 }}>
-                <b>Profile Images:</b>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {a.profileImages.map((img) => (
-                    <img
-                      key={img.image_id}
-                      src={img.url}
-                      alt={img.alt_text}
-                      style={{
-                        width: 40,
-                        height: 40,
-                        objectFit: "cover",
-                        borderRadius: 4,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+
             {a.galleryFinalized && a.galleryImages.length > 0 && (
               <div style={{ marginTop: 4 }}>
                 <b>Gallery Images:</b>
@@ -202,27 +298,29 @@ const ImageSelector = () => {
             Previous
           </button>
           {/* Page numbers */}
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
-            <button
-              key={pageNum}
-              onClick={() => setCurrentPage(pageNum)}
-              style={{
-                fontWeight: currentPage === pageNum ? "bold" : "normal",
-                background: currentPage === pageNum ? "#d1e7dd" : undefined,
-                border:
-                  currentPage === pageNum
-                    ? "2px solid #0d6efd"
-                    : "1px solid #ccc",
-                borderRadius: 4,
-                minWidth: 32,
-                minHeight: 32,
-                margin: "0 2px",
-              }}
-              disabled={currentPage === pageNum}
-            >
-              {pageNum}
-            </button>
-          ))}
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+            (pageNum) => (
+              <button
+                key={pageNum}
+                onClick={() => setCurrentPage(pageNum)}
+                style={{
+                  fontWeight: currentPage === pageNum ? "bold" : "normal",
+                  background: currentPage === pageNum ? "#d1e7dd" : undefined,
+                  border:
+                    currentPage === pageNum
+                      ? "2px solid #0d6efd"
+                      : "1px solid #ccc",
+                  borderRadius: 4,
+                  minWidth: 32,
+                  minHeight: 32,
+                  margin: "0 2px",
+                }}
+                disabled={currentPage === pageNum}
+              >
+                {pageNum}
+              </button>
+            )
+          )}
           <button
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage === totalPages}
@@ -234,9 +332,8 @@ const ImageSelector = () => {
       {selectedAthlete && (
         <div>
           <h2>{selectedAthlete.athlete_name}</h2>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            {(selectedAthlete.image_urls || []).map((image) => {
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "20px" }}>
+            {getNormalizedImageUrls(selectedAthlete).map((image) => {
               const isSelected = selectedImages[image.image_id];
               return (
                 <div
@@ -255,14 +352,43 @@ const ImageSelector = () => {
                 >
                   <img
                     src={image.url}
-                    alt={image.alt_text}
+                    alt={image.text || image.alt_text || ""}
                     style={{
                       width: "100%",
-                      height: "auto",
-                      objectFit: "contain",
+                      height: "200px",
+                      objectFit: "cover",
                       display: "block",
+                      marginBottom: "8px",
                     }}
                   />
+                  {image.text && (
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        padding: "4px",
+                        color: "#666",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {image.text}
+                    </div>
+                  )}
+                  {image.source && (
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#999",
+                        padding: "2px 4px 0 4px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {image.source}
+                    </div>
+                  )}
                   {isSelected && (
                     <div
                       style={{
@@ -288,20 +414,75 @@ const ImageSelector = () => {
               );
             })}
           </div>
-          <select
-            value={imageType}
-            onChange={(e) => setImageType(e.target.value)}
-            style={{
-              marginTop: "10px",
-              marginBottom: "10px",
-              paddingRight: "100px",
-              gap: "100px",
-            }}
+          <div style={{ marginTop: "20px", marginBottom: "10px" }}>
+            {imageTypeOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setImageType(opt.value)}
+                style={{
+                  padding: "8px 24px",
+                  marginRight: "10px",
+                  borderRadius: "6px",
+                  border:
+                    imageType === opt.value
+                      ? "2px solid #0d6efd"
+                      : "1px solid #ccc",
+                  background: imageType === opt.value ? "#d1e7dd" : "#f8f9fa",
+                  fontWeight: imageType === opt.value ? "bold" : "normal",
+                  color: imageType === opt.value ? "#0d6efd" : undefined,
+                  cursor: "pointer",
+                }}
+                disabled={imageType === opt.value}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ marginTop: "20px" }}>
+            <input
+              type="text"
+              placeholder="Paste image URL if none above are good"
+              value={manualUrl}
+              onChange={(e) => setManualUrl(e.target.value)}
+              style={{ width: "60%", padding: "8px", marginRight: "10px" }}
+            />
+            <button
+              onClick={async () => {
+                if (!manualUrl) return;
+                await axios.post(`${url}${getFinalizeEndpoint(imageType)}`, {
+                  athleteId: selectedAthlete.athlete_id,
+                  selected_images: [{ url: manualUrl, source: null }],
+                });
+                alert("Manual image finalized!");
+                setSelectedAthlete(null);
+                setSelectedImages({});
+                setManualUrl("");
+                setImageType("gallery");
+                // Refetch the current page
+                const params = new URLSearchParams({
+                  page: currentPage,
+                  limit: athletesPerPage,
+                });
+                axios
+                  .get(
+                    `${url}/api/images/athletes/unselected?${params.toString()}`
+                  )
+                  .then((res) => {
+                    setAthletes(res.data.athletes);
+                    setTotalAthletes(res.data.total);
+                  });
+              }}
+              disabled={!manualUrl}
+              style={{ padding: "8px 16px" }}
+            >
+              Finalize Manual Image
+            </button>
+          </div>
+          <button
+            onClick={saveSelectedImages}
+            style={{ marginTop: "20px", padding: "8px 16px" }}
+            disabled={!validateSelection()}
           >
-            <option value="profile">Profile</option>
-            <option value="gallery">Gallery</option>
-          </select>
-          <button onClick={saveSelectedImages} style={{ marginTop: "20px" }}>
             Finalize Image
             {Object.keys(selectedImages).length > 1 ? "s" : ""}
           </button>

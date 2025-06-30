@@ -6,8 +6,8 @@ const galleryImageSchema = new mongoose.Schema({
   selected_images: [
     {
       url: String,
-      alt_text: String,
-      image_id: String,
+      original_url: String,
+      source: String,
     },
   ],
   selected_at: { type: Date, default: Date.now },
