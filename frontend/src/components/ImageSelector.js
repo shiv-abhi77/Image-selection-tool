@@ -12,6 +12,10 @@ const ImageSelector = () => {
   const [totalAthletes, setTotalAthletes] = useState(0);
   const [manualUrl, setManualUrl] = useState("");
 
+  // Regex search for athletes
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+
   useEffect(() => {
     const params = new URLSearchParams({
       page: currentPage,
@@ -95,7 +99,7 @@ const ImageSelector = () => {
       selected_images: Object.values(selectedImages).map((img) => ({
         url: img.url,
         source: img.source,
-        text: img.text
+        text: img.text,
       })),
     });
     alert(`${imageType} image${selectedCount > 1 ? "s" : ""} finalized!`);
@@ -113,6 +117,15 @@ const ImageSelector = () => {
         setAthletes(res.data.athletes);
         setTotalAthletes(res.data.total);
       });
+  };
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchTerm.trim()) return;
+    const res = await axios.get(
+      `${url}/api/images/athletes/search?q=${encodeURIComponent(searchTerm)}`
+    );
+    setSearchResults(res.data);
   };
 
   // Normalize image_urls for selectedAthlete
@@ -148,6 +161,46 @@ const ImageSelector = () => {
   return (
     <div className="p-4">
       <h1>Select Athlete</h1>
+      <form onSubmit={handleSearch} style={{ marginBottom: 16 }}>
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search athlete by name..."
+          style={{ padding: 8, width: 300, marginRight: 8 }}
+        />
+        <button type="submit" style={{ padding: "8px 16px" }}>
+          Search
+        </button>
+      </form>
+      {searchResults.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <b>Search Results:</b>
+          <ul style={{ listStyle: "none", padding: 0 }}>
+            {searchResults.map((a) => (
+              <li key={a.athlete_id} style={{ marginBottom: 8 }}>
+                <span style={{ fontWeight: "bold" }}>{a.athlete_name}</span>
+                {a.discipline && (
+                  <span style={{ color: "#888", marginLeft: 8 }}>
+                    ({a.discipline})
+                  </span>
+                )}
+                <button
+                  style={{ marginLeft: 12, padding: "4px 12px" }}
+                  onClick={() => {
+                    setSelectedAthlete(a);
+                    setSelectedImages({});
+                    setSearchResults([]);
+                    setSearchTerm("");
+                  }}
+                >
+                  Select
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div
         style={{
           display: "flex",
@@ -265,11 +318,11 @@ const ImageSelector = () => {
               <div style={{ marginTop: 4 }}>
                 <b>Gallery Images:</b>
                 <div style={{ display: "flex", gap: 6 }}>
-                  {a.galleryImages.map((img) => (
+                  {a.galleryImages.map((img, idx) => (
                     <img
-                      key={img.image_id}
+                      key={img.url + idx}
                       src={img.url}
-                      alt={img.alt_text}
+                      alt={img.text || img.alt_text || ""}
                       style={{
                         width: 40,
                         height: 40,
@@ -452,7 +505,9 @@ const ImageSelector = () => {
                 if (!manualUrl) return;
                 await axios.post(`${url}${getFinalizeEndpoint(imageType)}`, {
                   athleteId: selectedAthlete.athlete_id,
-                  selected_images: [{ url: manualUrl, source: null, text: null }],
+                  selected_images: [
+                    { url: manualUrl, source: null, text: null },
+                  ],
                 });
                 alert("Manual image finalized!");
                 setSelectedAthlete(null);

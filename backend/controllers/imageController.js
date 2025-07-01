@@ -36,17 +36,15 @@ const getAllAthletes = async (req, res) => {
             },
             { $unwind: { path: "$athlete", preserveNullAndEmptyArrays: true } },
 
-            // Join Gallery data
+            // Join Gallery data (now each image is a separate document)
             {
               $lookup: {
                 from: "gallery_images",
                 localField: "athlete_id",
                 foreignField: "athlete_id",
-                as: "gallery",
+                as: "galleryImages",
               },
             },
-            // Since athlete_id is unique in gallery, we can safely unwind
-            { $unwind: { path: "$gallery", preserveNullAndEmptyArrays: true } },
 
             // Project required fields + finalized flags
             {
@@ -90,31 +88,27 @@ const getAllAthletes = async (req, res) => {
                 coverImageUrl: "$athlete.image_url",
                 coverFinalizedAt: "$athlete.updated_at",
 
-                // Gallery images
+                // Gallery images (new schema: array of images)
                 galleryFinalized: {
                   $cond: [
                     {
-                      $and: [
-                        { $ne: ["$gallery", null] },
-                        {
-                          $gt: [
-                            {
-                              $size: {
-                                $ifNull: ["$gallery.selected_images", []],
-                              },
-                            },
-                            0,
-                          ],
-                        },
-                      ],
+                      $gt: [{ $size: { $ifNull: ["$galleryImages", []] } }, 0],
                     },
                     true,
                     false,
                   ],
                 },
-                galleryFinalizedAt: "$gallery.selected_at",
+                galleryFinalizedAt: {
+                  $cond: [
+                    {
+                      $gt: [{ $size: { $ifNull: ["$galleryImages", []] } }, 0],
+                    },
+                    { $max: "$galleryImages.selected_at" },
+                    null,
+                  ],
+                },
                 galleryImages: {
-                  $ifNull: ["$gallery.selected_images", []],
+                  $ifNull: ["$galleryImages", []],
                 },
               },
             },
@@ -162,7 +156,7 @@ async function uploadToCloudinary(imageUrl, folder = "athlete_images") {
 
 const finalizeGalleryImage = async (req, res) => {
   try {
-    const { athleteId, selected_images } = req.body;
+    const { athleteId, selected_images, athlete_name } = req.body;
 
     // Validation
     if (
@@ -174,41 +168,22 @@ const finalizeGalleryImage = async (req, res) => {
       return res.status(400).json({ message: "Invalid request" });
     }
 
-    // Upload all images to Cloudinary and map to objects with both URLs
-    const uploadedImages = await Promise.all(
-      selected_images.map(async (img) => {
-        const uploadedUrl = await uploadToCloudinary(img.url, "gallery");
-        return {
-          url: uploadedUrl, // Cloudinary URL
-          original_url: img.url, // Original image URL
-          source: img.source,
-          text: img.text
-        };
-      })
-    );
-
-    // Add to existing gallery images, don't replace
-    const galleryDoc = await GalleryImage.findOne({ athlete_id: new mongoose.Types.ObjectId(athleteId) });
-    let newImages = uploadedImages;
-    if (galleryDoc && Array.isArray(galleryDoc.selected_images)) {
-      // Avoid duplicates by original_url
-      const existingOriginalUrls = new Set(galleryDoc.selected_images.map(img => img.original_url));
-      newImages = [
-        ...galleryDoc.selected_images,
-        ...uploadedImages.filter(img => !existingOriginalUrls.has(img.original_url))
-      ];
-    }
-
-    // Save/update in DB
-    await GalleryImage.findOneAndUpdate(
-      { athlete_id: new mongoose.Types.ObjectId(athleteId) },
-      {
+    // Insert each image as a separate document, uploading to Cloudinary
+    const docs = [];
+    for (const img of selected_images) {
+      // Upload to Cloudinary and get the secure URL
+      const cloudinaryUrl = await uploadToCloudinary(img.url, "gallery_images");
+      docs.push({
         athlete_id: new mongoose.Types.ObjectId(athleteId),
-        selected_images: newImages,
+        athlete_name: athlete_name || undefined,
+        url: cloudinaryUrl, // Use Cloudinary URL
+        original_url: img.url,
+        source: img.source,
+        text: img.text,
         selected_at: new Date(),
-      },
-      { upsert: true, new: true }
-    );
+      });
+    }
+    await GalleryImage.insertMany(docs);
 
     res.status(200).json({ message: "Gallery image(s) finalized" });
   } catch (err) {
@@ -231,7 +206,7 @@ const finalizeHeroImage = async (req, res) => {
         .status(400)
         .json({ message: "Must select exactly one valid image for hero" });
     }
-    const url = await uploadToCloudinary(selected_images[0].url, "hero");
+    const url = await uploadToCloudinary(selected_images[0].url, "hero_images");
     await Athlete.findByIdAndUpdate(
       athleteId,
       { hero_image: url },
@@ -258,7 +233,10 @@ const finalizeCoverImage = async (req, res) => {
         .status(400)
         .json({ message: "Must select exactly one valid image for cover" });
     }
-    const url = await uploadToCloudinary(selected_images[0].url, "cover");
+    const url = await uploadToCloudinary(
+      selected_images[0].url,
+      "avatar_images"
+    );
     await Athlete.findByIdAndUpdate(
       athleteId,
       { image_url: url },
@@ -271,9 +249,36 @@ const finalizeCoverImage = async (req, res) => {
   }
 };
 
+// Regex search for athletes by name
+const searchAthletes = async (req, res) => {
+  try {
+    const q = req.query.q || "";
+    if (!q) return res.json([]);
+    // Search in AthleteScraped collection by athlete_name (case-insensitive regex)
+    const results = await AthleteScraped.find({
+      athlete_name: { $regex: q, $options: "i" },
+    }).limit(20);
+    console.log(results);
+    res.json(results);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// Controller for fetching gallery images by athlete_id
+const getGalleryImagesByAthlete = async (req, res) => {
+  const athlete_id = req.query.athlete_id;
+  if (!athlete_id) return res.json([]);
+  const images = await GalleryImage.find({ athlete_id });
+  res.json(images);
+};
+
 module.exports = {
   getAllAthletes,
   finalizeGalleryImage,
   finalizeHeroImage,
   finalizeCoverImage,
+  searchAthletes,
+  getGalleryImagesByAthlete,
 };
