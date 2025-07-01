@@ -51,7 +51,7 @@ const ImageSelector = () => {
   const imageTypeOptions = [
     { label: "Gallery", value: "gallery" },
     { label: "Hero", value: "hero" },
-    { label: "Cover", value: "cover" },
+    { label: "Avatar", value: "cover" },
   ];
 
   // Map image type to backend endpoint
