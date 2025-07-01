@@ -16,6 +16,9 @@ const ImageSelector = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
 
+  // Unfinalized counts
+  const [unfinalizedCounts, setUnfinalizedCounts] = useState(null);
+
   useEffect(() => {
     const params = new URLSearchParams({
       page: currentPage,
@@ -30,6 +33,12 @@ const ImageSelector = () => {
         setTotalAthletes(res.data.total);
       });
   }, [currentPage]);
+
+  useEffect(() => {
+    axios.get(`${url}/api/images/athletes/unfinalized/counts`).then((res) => {
+      setUnfinalizedCounts(res.data);
+    });
+  }, []);
 
   const totalPages = Math.ceil(totalAthletes / athletesPerPage);
 
@@ -160,7 +169,17 @@ const ImageSelector = () => {
 
   return (
     <div className="p-4">
-      <h1>Select Athlete</h1>
+      {unfinalizedCounts && (
+        <div style={{ marginBottom: 12, fontWeight: "bold" }}>
+          <div>
+            Total athletes with any unfinalized images:{" "}
+            {unfinalizedCounts.total}
+          </div>
+          <div>Unfinalized hero: {unfinalizedCounts.hero}</div>
+          <div>Unfinalized cover: {unfinalizedCounts.cover}</div>
+          <div>Unfinalized gallery: {unfinalizedCounts.gallery}</div>
+        </div>
+      )}
       <form onSubmit={handleSearch} style={{ marginBottom: 16 }}>
         <input
           type="text"

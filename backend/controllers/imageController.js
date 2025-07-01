@@ -274,6 +274,57 @@ const getGalleryImagesByAthlete = async (req, res) => {
   res.json(images);
 };
 
+const getCountUnfinalizedAthletes = async (req, res) => {
+  try {
+    // Get all athlete_ids from AthleteScraped
+    const scrapedAthletes = await AthleteScraped.find({}, { athlete_id: 1 }).lean();
+    const athleteIds = scrapedAthletes.map(a => a.athlete_id);
+
+    // Find athletes with missing hero_image
+    const unfinalizedHero = await Athlete.find({
+      _id: { $in: athleteIds },
+      $or: [
+        { hero_image: { $in: [null, ""] } }
+      ]
+    }, { _id: 1 }).lean();
+
+    // Find athletes with missing image_url
+    const unfinalizedCover = await Athlete.find({
+      _id: { $in: athleteIds },
+      $or: [
+        { image_url: { $in: [null, ""] } }
+      ]
+    }, { _id: 1 }).lean();
+
+    // Find athlete_ids with at least one gallery image
+    const athletesWithGallery = await GalleryImage.distinct("athlete_id", {
+      athlete_id: { $in: athleteIds }
+    });
+
+    // Unfinalized gallery = athlete_ids not in athletesWithGallery
+    const unfinalizedGallery = athleteIds.filter(id =>
+      !athletesWithGallery.some(gid => gid.toString() === id.toString())
+    );
+
+    // Merge all unfinalized athlete_ids (unique)
+    const unfinalizedIds = new Set([
+      ...unfinalizedHero.map(a => a._id.toString()),
+      ...unfinalizedCover.map(a => a._id.toString()),
+      ...unfinalizedGallery.map(id => id.toString())
+    ]);
+
+    res.json({
+      total: unfinalizedIds.size,
+      hero: unfinalizedHero.length,
+      cover: unfinalizedCover.length,
+      gallery: unfinalizedGallery.length
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server Error" });
+  }
+}
+
 module.exports = {
   getAllAthletes,
   finalizeGalleryImage,
@@ -281,4 +332,5 @@ module.exports = {
   finalizeCoverImage,
   searchAthletes,
   getGalleryImagesByAthlete,
+  getCountUnfinalizedAthletes
 };
