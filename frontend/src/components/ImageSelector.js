@@ -19,6 +19,9 @@ const ImageSelector = () => {
   // Unfinalized counts
   const [unfinalizedCounts, setUnfinalizedCounts] = useState(null);
 
+  // For page jump
+  const [pageInput, setPageInput] = useState("");
+
   useEffect(() => {
     const params = new URLSearchParams({
       page: currentPage,
@@ -370,9 +373,16 @@ const ImageSelector = () => {
           >
             Previous
           </button>
-          {/* Page numbers */}
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-            (pageNum) => (
+          {/* Show at most 10 pages, centered around currentPage if possible */}
+          {(() => {
+            const pages = [];
+            let start = Math.max(1, currentPage - 4);
+            let end = Math.min(totalPages, start + 9);
+            if (end - start < 9) start = Math.max(1, end - 9);
+            for (let i = start; i <= end; i++) {
+              pages.push(i);
+            }
+            return pages.map((pageNum) => (
               <button
                 key={pageNum}
                 onClick={() => setCurrentPage(pageNum)}
@@ -392,14 +402,58 @@ const ImageSelector = () => {
               >
                 {pageNum}
               </button>
-            )
-          )}
+            ));
+          })()}
           <button
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage === totalPages}
           >
             Next
           </button>
+          {/* Page jump input */}
+          <span style={{ marginLeft: 12 }}>
+            Go to page:
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={pageInput}
+              onChange={(e) =>
+                setPageInput(e.target.value.replace(/[^\d]/g, ""))
+              }
+              style={{ width: 60, marginLeft: 6, marginRight: 6 }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && pageInput) {
+                  let page = Math.max(
+                    1,
+                    Math.min(totalPages, parseInt(pageInput))
+                  );
+                  setCurrentPage(page);
+                  setPageInput("");
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                if (pageInput) {
+                  let page = Math.max(
+                    1,
+                    Math.min(totalPages, parseInt(pageInput))
+                  );
+                  setCurrentPage(page);
+                  setPageInput("");
+                }
+              }}
+              disabled={
+                !pageInput ||
+                isNaN(pageInput) ||
+                parseInt(pageInput) < 1 ||
+                parseInt(pageInput) > totalPages
+              }
+            >
+              Go
+            </button>
+          </span>
         </div>
       </div>
       {selectedAthlete && (
